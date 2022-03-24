@@ -138,4 +138,6 @@ data/videos
 # Pyre type checker
 .pyre/
 .idea
+checkpoints
+logs
 #配置文件

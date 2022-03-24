@@ -5,7 +5,6 @@ from prettytable import PrettyTable
 
 class ConfusionMatrix(object):
     """计算混淆矩阵"""
-
     def __init__(self, tags, predict_tags):
 
         # 将tag的list 展平  [[xxx],[],[],[],[xxx]]->[xxxxxxxxxxxx]
