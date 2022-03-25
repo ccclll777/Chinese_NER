@@ -3,7 +3,7 @@ from torch import nn
 from networks.bilstm_network import BiLSTM
 from itertools import zip_longest
 class BiLSTM_CRF(nn.Module):
-    def __init__(self, vocab_size, embedding_size, hidden_size, out_size,device):
+    def __init__(self, vocab_size, embedding_size, hidden_size, out_size,device,use_bert = False,bert_model_dir = ""):
         """初始化参数：
         BiLSTM-CRF其实就是一个CRF模型，只不过用BiLSTM得到状态特征值sk，用反向传播算法更新转移特征值tk 。
             vocab_size:字典的大小
@@ -12,7 +12,7 @@ class BiLSTM_CRF(nn.Module):
             out_size:标注的种类
         """
         super(BiLSTM_CRF, self).__init__()
-        self.bilstm = BiLSTM(vocab_size, embedding_size, hidden_size, out_size)
+        self.bilstm = BiLSTM(vocab_size, embedding_size, hidden_size, out_size,use_bert,bert_model_dir)
         self.device = device
         """
         CRF多学习一个转移矩阵 [out_size, out_size] 初始化为均匀分布 

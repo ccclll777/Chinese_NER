@@ -140,4 +140,5 @@ data/videos
 .idea
 checkpoints
 logs
+bert
 #配置文件

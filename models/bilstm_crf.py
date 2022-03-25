@@ -28,7 +28,7 @@ class BILSTM_Model(object):
         self.hidden_size =  args.hidden_size
         # 根据是否添加crf初始化不同的模型 选择不一样的损失计算函数
         self.model = BiLSTM_CRF(self.vocab_size, self.embedding_size,
-                                    self.hidden_size, self.out_size,self.device).to(self.device)
+                                    self.hidden_size, self.out_size,self.device,args.use_bert ,args.bert_model_dir ).to(self.device)
         # self.cal_loss_func = cal_lstm_crf_loss
         # 训练参数：
         self.epoch = args.epoch

@@ -18,12 +18,17 @@ def get_args():
     """
     bilist crf 参数
     """
-
+    #是否使用预训练的bert进行embedding
+    parser.add_argument('--use-bert', type=bool, default=True)
+    parser.add_argument('--bert-model-dir', type=str, default=base_dir+"/bert")
     parser.add_argument('--embedding-size', type=int, default=128)
     parser.add_argument('--hidden-size', type=int, default=128)
     parser.add_argument('--batch-size', type=int, default=64)
     parser.add_argument('--lr', type=float, default=0.001)
     parser.add_argument('--epoch', type=int, default=50)
+
+
+
     parser.add_argument('--log-step', type=int, default=5)
     parser.add_argument(
         '--device', type=str,
@@ -36,7 +41,7 @@ def get_args():
     测试模型
     """
     parser.add_argument('--test-model-path', type=str, default="/checkpoints/clue/bilstm-crf/0324_153734/epoch_8.pth")
-    parser.add_argument('--test', type=bool, default=True)
+    parser.add_argument('--test', type=bool, default=False)
     args = parser.parse_known_args()[0]
     return args
 
@@ -53,14 +58,21 @@ if __name__ == '__main__':
         """
         模型保存相关
         """
-        args.model_path = os.path.join(base_dir,args.model_path,args.algorithm,t0)
+        if args.use_bert == True:
+            args.model_path = os.path.join(base_dir,args.model_path,args.algorithm+"-bert",t0)
+        else:
+            args.model_path = os.path.join(base_dir, args.model_path, args.algorithm, t0)
         folder = os.path.exists(args.model_path)
         if not folder and args.test == False:  # 判断是否存在文件夹如果不存在则创建为文件夹
             os.makedirs(args.model_path)
         """
         log相关
         """
-        args.logs = os.path.join(base_dir,args.logs,args.algorithm,t0)
+        if args.use_bert == True:
+            args.logs = os.path.join(base_dir, args.logs, args.algorithm+"-bert", t0)
+        else:
+            args.logs = os.path.join(base_dir, args.logs, args.algorithm, t0)
+
         writer = SummaryWriter(args.logs)
         writer.add_text("args", str(args))
         args.writer = writer
@@ -87,6 +99,8 @@ if __name__ == '__main__':
             data_set.extend_maps()
             vocab_size = len(data_set.word_to_index)
             out_size = len(data_set.tag_to_index)
+            if args.use_bert == True:
+                args.embedding_size = 768
             bilstm_model = BILSTM_Model(args,data_set)
             bilstm_model.train()
 

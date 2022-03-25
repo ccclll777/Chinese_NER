@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
+from pytorch_pretrained_bert import BertModel
 class BiLSTM(nn.Module):
-    def __init__(self, vocab_size, embedding_size, hidden_size, out_size):
+    def __init__(self, vocab_size, embedding_size, hidden_size, out_size,use_bert = False,bert_model_dir = ""):
         """初始化参数：
             双向lstm网络
             vocab_size:字典的大小
@@ -11,14 +12,31 @@ class BiLSTM(nn.Module):
             out_size:标注的种类
         """
         super(BiLSTM, self).__init__()
-        self.embedding = nn.Embedding(vocab_size, embedding_size) #Embedding层
+        """
+        是否使用bert作为词嵌入
+        """
+        self.use_bert = use_bert
+        if use_bert:
+            self.bert_embedding = BertModel.from_pretrained(bert_model_dir)
+            # self.embedding_size = self.bert_embedding.
+        else:
+            self.embedding = nn.Embedding(vocab_size, embedding_size) #Embedding层
         #batch_first： 如果是True，则input为(batch, seq, input_size)。默认值为：False（seq_len, batch, input_size）
         self.bilstm = nn.LSTM(embedding_size, hidden_size,
                               batch_first=True,
                               bidirectional=True)
 
         self.linear = nn.Linear(2*hidden_size, out_size) #将biilist
-
+    def bert_encoder(self, x):
+        """
+        使用预训练的bert进行encoder
+        :param x: [batch）size, sent_len]
+        :return: [batch_size, sent_len, 768]
+        """
+        with torch.no_grad():
+            encoded_layer, _  = self.bert_embedding(x)
+            encoded = encoded_layer[-1]
+        return encoded
     def forward(self, batch_sentences, sentence_lengths):
         """
 
@@ -26,7 +44,10 @@ class BiLSTM(nn.Module):
         :param sentence_lengths: 这个batch 每个句子的长度
         :return:
         """
-        embedding = self.embedding(batch_sentences)  # [batch_size, length, embedding_size]
+        if self.use_bert:
+            embedding = self.bert_encoder(batch_sentences) #[batch_size, length, 786]
+        else:
+            embedding = self.embedding(batch_sentences)  # [batch_size, length, embedding_size]
         #https://zhuanlan.zhihu.com/p/342685890
         #在 pad 之后再使用 pack_padded_sequence 对数据进行处理 避免无效的计算 pad的位置不会进行计算
         packed = pack_padded_sequence(embedding, sentence_lengths, batch_first=True)
