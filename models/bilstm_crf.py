@@ -3,6 +3,7 @@ from copy import deepcopy
 import time
 import torch
 from tqdm import tqdm
+from evaluate import ConfusionMatrix
 import torch.nn as nn
 import torch.optim as optim
 from utils import sort_by_lengths
@@ -26,107 +27,35 @@ class BILSTM_Model(object):
         # 加载模型参数
         self.embedding_size = args.embedding_size
         self.hidden_size =  args.hidden_size
-        # 根据是否添加crf初始化不同的模型 选择不一样的损失计算函数
-        self.model = BiLSTM_CRF(self.vocab_size, self.embedding_size,
-                                    self.hidden_size, self.out_size,self.device,args.use_bert ,args.bert_model_dir ).to(self.device)
-        # self.cal_loss_func = cal_lstm_crf_loss
+        self.model = BiLSTM_CRF(vocab_size=self.vocab_size,
+                                embedding_size=self.embedding_size,
+                                hidden_size=self.hidden_size,
+                                out_size=self.out_size,
+                                num_layers=args.num_layers,
+                                device=self.device,
+                                dropout=args.dropout,
+                                use_dropout=args.use_dropout,
+                                use_norm = args.use_norm,
+                                use_bert=args.use_bert ,
+                                bert_model_dir =args.bert_model_dir).to(self.device)
         # 训练参数：
         self.epoch = args.epoch
         self.log_step = args.log_step
         self.lr = args.lr
         self.batch_size = args.batch_size
+        #对梯度进行裁剪
+        self.grad_norm = args.grad_norm
+        self.use_grad_norm = args.use_grad_norm
         # 初始化优化器
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.lr)
-
+        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            self.optimizer, float(self.epoch), eta_min=args.lr_min)
         # 初始化其他指标
         self.step = 0
         self.train_log_step =0
         self.best_val_loss = 1e18
 
-    def cal_lstm_crf_loss(self,crf_scores, target_tags,):
-        """
-                计算双向LSTM-CRF模型的损失
-        该损失函数的计算可以参考:https://arxiv.org/pdf/1603.01360.pdf
-        :param crf_scores:  序列中每个字符的Emission Score 和转移矩阵的拼接
-                            [batch_size, max_len, out_size, out_size]
-        :param target_tags:  tags
-        :return:
-        """
-        pad_id = self.data_set.tag_to_index.get('<PAD>')
-        start_id = self.data_set.tag_to_index.get('<START>')
-        end_id = self.data_set.tag_to_index.get('<END>')
 
-        # targets:[batch, max_len] crf_scores:[batch_size, max_len, out_size, out_size]
-        batch_size, max_len = target_tags.size()
-        target_size = len(self.data_set.tag_to_index) #tag的个数
-
-        """
-        使用crf_scores（发射矩阵+转移矩阵的拼接）；tags——真实序列标注，以此确定转移矩阵中选择哪条路径
-        计算golden score  也就是真实的路径的score
-        """
-        # mask = 1 - ((targets == pad_id) + (targets == end_id))  # [B, L]
-        mask = (target_tags != pad_id) #去掉所有的PAD PAD不参加计算
-        lengths = mask.sum(dim=1) #每个句子的长度 有多少个单词
-        target_tags = self.indexed(target_tags, target_size, start_id) #将tag转化成对应的index
-
-        target_tags = target_tags.masked_select(mask)  # 将有PAD的位置去掉，只保留真实tag 维度为real_len
-
-        flatten_scores = crf_scores.masked_select(
-            mask.view(batch_size, max_len, 1, 1).expand_as(crf_scores)
-        ).view(-1, target_size * target_size).contiguous()
-        index = target_tags.unsqueeze(1) #找到真实路径的tag对应的index [real_len,1]
-
-        # 筛选 我们需要的位置的值，然后求和，计算出真实路径得分
-        # 对于每一个[output_size,output_siz]的矩阵， 选择其中的某一个位置，真实tag的位置
-        golden_scores = flatten_scores.gather(
-            dim=1, index=index) #[real_len,1]
-        golden_scores = golden_scores.sum() #将所有real_len个值求和
-        """
-        计算所有路径的scores 
-        输入 发射矩阵(emission score)， 输出：所有可能路径得分之和/归一化因子/配分函数/Z(x)
-        https://www.yanxishe.com/columnDetail/21153
-        """
-        # 计算all path scores
-        # scores_upto_t[i, j]表示第i个句子的第t个词被标注为j标记的所有t时刻事前的所有子路径的分数之和
-        #每个时刻t的某个tag  会有tag_size个指向它的路径
-        scores_upto_t = torch.zeros(batch_size, target_size).to(self.device)
-        for t in range(max_len):
-            # 当前时刻 有效的 batch_size（因为有些序列比较短) 可能在一些步骤之后 就不参与计算了
-            batch_size_t = (lengths > t).sum().item()
-            if t == 0: # start的得分
-                scores_upto_t[:batch_size_t] = crf_scores[:batch_size_t,
-                                               t, start_id, :]
-            else:
-                """
-                 s crf_scores[:batch_size_t, t, :, :]：t时刻tag_i emission score（1个）的广播。
-                                                        需要将其与t-1时刻的5个previous_tags转移到该tag_i
-                                                        的transition scors相加
-                 cores_upto_t[:batch_size_t].unsqueeze(2)：t-1时刻的5个previous_tags到该tag_i的
-                                                                transition scors
-                https://www.yanxishe.com/columnDetail/21153
-                """
-                scores_upto_t[:batch_size_t] = torch.logsumexp(
-                    crf_scores[:batch_size_t, t, :, :] +
-                    scores_upto_t[:batch_size_t].unsqueeze(2),
-                    dim=1 )
-        all_path_scores = scores_upto_t[:, end_id].sum()
-        # 训练大约两个epoch loss变成负数，从数学的角度上来说，loss = -logP
-        loss = (all_path_scores - golden_scores) / batch_size
-        return loss
-
-    def indexed(self,target_tags, tag_set_size, start_id):
-        """
-        将targets中的数转化为在[T*T]大小序列中的索引,T是标注的种类
-        :param target_tags:
-        :param tag_set_size:
-        :param start_id:
-        :return:
-        """
-        batch_size, max_len = target_tags.size()
-        for col in range(max_len - 1, 0, -1):  # 从后向前遍历
-            target_tags[:, col] += (target_tags[:, col - 1] * tag_set_size)
-        target_tags[:, 0] += (start_id * tag_set_size)
-        return target_tags
 
     def train(self):
         """
@@ -144,6 +73,7 @@ class BILSTM_Model(object):
         train_word_lists, train_tag_lists, _ = sort_by_lengths(temp_train_word_lists, temp_train_tag_lists)
         valid_word_lists, valid_tag_lists, _ = sort_by_lengths(temp_valid_word_lists, temp_valid_tag_lists)
         for i in range(self.epoch):
+            self.model.train()
             self.step = 0
             losses = 0
             #按照batch进行训练
@@ -153,7 +83,7 @@ class BILSTM_Model(object):
                 batch_tags = train_tag_lists[index:index+self.batch_size]
                 losses += self.train_step(batch_sents,
                                           batch_tags)
-
+                self.scheduler.step()
                 if self.step % self.log_step == 0:
                     total_step = (len(train_word_lists) // self.batch_size + 1)
                     print("Epoch {}, step/total_step: {}/{} {:.2f}% Loss:{:.4f}".format(
@@ -167,6 +97,14 @@ class BILSTM_Model(object):
 
             # 每轮结束测试在验证集上的性能，保存最好的一个
             val_loss = self.validate(i,valid_word_lists, valid_tag_lists)
+            pred_tag_lists, tag_lists = self.test()
+            confusion_matrix = ConfusionMatrix(tag_lists, pred_tag_lists, self.data_set.tag_list)
+            "打印评估结果"
+            confusion_matrix.print_scores()
+            for tag in confusion_matrix.tag_set:
+                self.writer.add_scalar("test/"+tag+"_precision", confusion_matrix.precision_scores[tag], i)
+                self.writer.add_scalar("test/"+tag+"_recall", confusion_matrix.recall_scores[tag], i)
+                self.writer.add_scalar("test/"+tag+"_f1", confusion_matrix.f1_scores[tag], i)
             print("Epoch {}, Val Loss:{:.4f}".format(i, val_loss))
             self.writer.add_scalar("val/loss", val_loss, i)
     def train_step(self, batch_sentences, batch_tags):
@@ -189,8 +127,10 @@ class BILSTM_Model(object):
         scores = self.model(token_sentences, lengths)
         # 计算损失 更新参数
         self.optimizer.zero_grad()
-        loss = self.cal_lstm_crf_loss(scores, target_tags).to(self.device)
+        loss = self.model.crf.cal_lstm_crf_loss(scores, target_tags,self.data_set.tag_to_index).to(self.device)
         loss.backward()
+        if self.use_grad_norm:
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
         self.optimizer.step()
         return loss.item()
     def validate(self,epoch,valid_word_lists,valid_tag_lists):
@@ -206,7 +146,7 @@ class BILSTM_Model(object):
         with torch.no_grad():
             val_losses = 0.
             val_step = 0
-            for index in tqdm(range(0, len(valid_word_lists), self.batch_size)):
+            for index in range(0, len(valid_word_lists), self.batch_size):
                 val_step += 1
                 # 准备batch数据
                 batch_sentences = valid_word_lists[index:index+self.batch_size]
@@ -220,11 +160,10 @@ class BILSTM_Model(object):
                 target_tags = target_tags.to(self.device)
 
                 # forward
-                scores = self.model(valid_token_sentences, lengths)
-
+                scores,pred_tag_ids = self.model.test(valid_token_sentences, lengths,self.data_set.tag_to_index)
                 # 计算损失
-                loss = self.cal_lstm_crf_loss(
-                    scores, target_tags).to(self.device)
+                loss = self.model.crf.cal_lstm_crf_loss(
+                    scores, target_tags,self.data_set.tag_to_index).to(self.device)
                 val_losses += loss.item()
             val_loss = val_losses / val_step
 
@@ -250,7 +189,7 @@ class BILSTM_Model(object):
 
         self.model.eval()
         with torch.no_grad():
-            batch_tagids = self.model.viterbi_decode(
+            crf_scores, batch_tagids = self.model.test(
                 test_token_sentences, lengths,self.data_set.tag_to_index)
 
         # 将id转化为标注

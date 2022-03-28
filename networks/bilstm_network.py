@@ -1,11 +1,23 @@
 import torch
 import torch.nn as nn
+from torch.nn import LayerNorm
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 from pytorch_pretrained_bert import BertModel
+# class SpatialDropout(nn.Dropout2d):
+#     def __init__(self, p=0.6):
+#         super(SpatialDropout, self).__init__(p=p)
+#
+#     def forward(self, x):
+#         x = x.unsqueeze(2)  # (N, T, 1, K)
+#         x = x.permute(0, 3, 2, 1)  # (N, K, 1, T)
+#         x = super(SpatialDropout, self).forward(x)  # (N, K, 1, T), some features are masked
+#         x = x.permute(0, 3, 2, 1)  # (N, T, 1, K)
+#         x = x.squeeze(2)  # (N, T, K)
+#         return x
 class BiLSTM(nn.Module):
-    def __init__(self, vocab_size, embedding_size, hidden_size, out_size,use_bert = False,bert_model_dir = ""):
+    def __init__(self, vocab_size, embedding_size, hidden_size, out_size,num_layers,dropout =0.1,use_dropout=True,use_norm = True,use_bert = False,bert_model_dir = ""):
         """初始化参数：
-            双向lstm网络
+            双向lstm网络 +dropout +归一化
             vocab_size:字典的大小
             embedding_size:词向量的维数
             hidden_size：隐向量的维数
@@ -15,17 +27,32 @@ class BiLSTM(nn.Module):
         """
         是否使用bert作为词嵌入
         """
+        self.use_dropout = use_dropout
         self.use_bert = use_bert
+        self.use_norm = use_norm
         if use_bert:
             self.bert_embedding = BertModel.from_pretrained(bert_model_dir)
             # self.embedding_size = self.bert_embedding.
         else:
             self.embedding = nn.Embedding(vocab_size, embedding_size) #Embedding层
-        #batch_first： 如果是True，则input为(batch, seq, input_size)。默认值为：False（seq_len, batch, input_size）
-        self.bilstm = nn.LSTM(embedding_size, hidden_size,
-                              batch_first=True,
-                              bidirectional=True)
+        if self.use_dropout:
+            self.dropout = nn.Dropout(dropout)
+            # batch_first： 如果是True，则input为(batch, seq, input_size)。默认值为：False（seq_len, batch, input_size）
+            self.bilstm = nn.LSTM(input_size=embedding_size, hidden_size=hidden_size,
+                                  batch_first=True,
+                                  bidirectional=True,
+                                  num_layers=num_layers,
+                                  dropout=dropout
+                                  )
+        else:
+            self.bilstm = nn.LSTM(input_size=embedding_size, hidden_size=hidden_size,
+                                  batch_first=True,
+                                  bidirectional=True,
+                                  num_layers=num_layers )
 
+
+        if self.use_norm:
+            self.layer_norm = LayerNorm(hidden_size * 2)
         self.linear = nn.Linear(2*hidden_size, out_size) #将biilist
     def bert_encoder(self, x):
         """
@@ -48,19 +75,23 @@ class BiLSTM(nn.Module):
             embedding = self.bert_encoder(batch_sentences) #[batch_size, length, 786]
         else:
             embedding = self.embedding(batch_sentences)  # [batch_size, length, embedding_size]
+        if self.use_dropout:
+            embedding = self.dropout(embedding)
         #https://zhuanlan.zhihu.com/p/342685890
         #在 pad 之后再使用 pack_padded_sequence 对数据进行处理 避免无效的计算 pad的位置不会进行计算
         packed = pack_padded_sequence(embedding, sentence_lengths, batch_first=True)
         output, (h_n, c_n) = self.bilstm(packed)
+
         # rnn_out:[B, L, hidden_size*2]
         output, _ = pad_packed_sequence(output, batch_first=True) #pack_padded_sequence 函数的逆向操作。就是把压紧的序列再填充回来
-
+        if self.use_norm:
+            output = self.layer_norm(output)
         scores = self.linear(output)  #用线性层映射到输出 # [batch_size, length, out_size]
         return scores
 
-    def test(self, sents_tensor, lengths, _):
-        """第三个参数不会用到，加它是为了与BiLSTM_CRF保持同样的接口"""
-        logits = self.forward(sents_tensor, lengths) # [batch_size, length, out_size]
-        _, batch_tag_index = torch.max(logits, dim=2) #找到得分最大的index
-
-        return batch_tag_index
+    # def test(self, sents_tensor, lengths, _):
+    #     """第三个参数不会用到，加它是为了与BiLSTM_CRF保持同样的接口"""
+    #     logits = self.forward(sents_tensor, lengths) # [batch_size, length, out_size]
+    #     _, batch_tag_index = torch.max(logits, dim=2) #找到得分最大的index
+    #
+    #     return batch_tag_index

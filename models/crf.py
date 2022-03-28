@@ -53,3 +53,4 @@ class CRFModel(object):
         :return:
         """
         return [self.word_to_features(sentence, i) for i in range(len(sentence))]
+
