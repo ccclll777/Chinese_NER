@@ -3,19 +3,8 @@ import torch.nn as nn
 from torch.nn import LayerNorm
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 from pytorch_pretrained_bert import BertModel
-# class SpatialDropout(nn.Dropout2d):
-#     def __init__(self, p=0.6):
-#         super(SpatialDropout, self).__init__(p=p)
-#
-#     def forward(self, x):
-#         x = x.unsqueeze(2)  # (N, T, 1, K)
-#         x = x.permute(0, 3, 2, 1)  # (N, K, 1, T)
-#         x = super(SpatialDropout, self).forward(x)  # (N, K, 1, T), some features are masked
-#         x = x.permute(0, 3, 2, 1)  # (N, T, 1, K)
-#         x = x.squeeze(2)  # (N, T, K)
-#         return x
 class BiLSTM(nn.Module):
-    def __init__(self, vocab_size, embedding_size, hidden_size, out_size,num_layers,dropout =0.1,use_dropout=True,use_norm = True,use_bert = False,bert_model_dir = ""):
+    def __init__(self, vocab_size, embedding_size, hidden_size, out_size,num_layers,dropout =0.1,use_dropout=True,use_norm = True,use_bert = False,fine_tuning=False,bert_model_dir = ""):
         """初始化参数：
             双向lstm网络 +dropout +归一化
             vocab_size:字典的大小
@@ -30,8 +19,11 @@ class BiLSTM(nn.Module):
         self.use_dropout = use_dropout
         self.use_bert = use_bert
         self.use_norm = use_norm
+        self.fine_tuning = fine_tuning
         if use_bert:
             self.bert_embedding = BertModel.from_pretrained(bert_model_dir)
+            for param in self.bert_embedding.parameters():
+                param.requires_grad = self.fine_tuning
             # self.embedding_size = self.bert_embedding.
         else:
             self.embedding = nn.Embedding(vocab_size, embedding_size) #Embedding层
@@ -58,7 +50,7 @@ class BiLSTM(nn.Module):
         """
         使用预训练的bert进行encoder
         :param x: [batch）size, sent_len]
-        :return: [batch_size, sent_len, 768]
+        :return: [batch_size, sent_len, bert-base-chinese]
         """
         with torch.no_grad():
             encoded_layer, _  = self.bert_embedding(x)

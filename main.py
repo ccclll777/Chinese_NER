@@ -3,6 +3,7 @@ import torch
 from data import DataSet
 from models.crf import CRFModel
 import os
+import numpy as np
 from models.hmm import HMM
 import datetime
 from utils import  save_model,load_model
@@ -14,18 +15,21 @@ base_dir = os.getcwd()
 def get_args():
     parser = argparse.ArgumentParser()
     #[hmm,crf,bilstm-crf,transformer-crf】
-    parser.add_argument('--algorithm', type=str, default="bilstm-crf",choices=["hmm","crf","bilstm-crf","transformer-crf"])  # 用于选择哪种算法
+    parser.add_argument('--algorithm', type=str, default="transformer-crf",choices=["hmm","crf","bilstm-crf","transformer-crf"])  # 用于选择哪种算法
     #['msra','clue'】
     parser.add_argument('--data-set', type=str, default="clue")  # 用于选择那个数据集
     parser.add_argument('--min-freq', type=int, default=10)  # 去掉频率小于min-freq的字
+    parser.add_argument('--seed', type=int, default=10)  # 随机数种子
     """
     bilist crf 参数
     """
     #是否使用预训练的bert进行embedding
     parser.add_argument('--use-bert', action="store_true")
-    parser.add_argument('--bert-model-dir', type=str, default="/bert/768")
-    parser.add_argument('--embedding-size', type=int, default=768) #bert bilstm用768
-    parser.add_argument('--hidden-size', type=int, default=384)  #bert bilstm用384
+    parser.add_argument('--fine-tuning', action="store_true") #是否微调bert
+
+    parser.add_argument('--bert-model-dir', type=str, default="/bert/asasahng")
+    parser.add_argument('--embedding-size', type=int, default=128) #bert bilstm用768
+    parser.add_argument('--hidden-size', type=int, default=256)  #bert bilstm用384
     parser.add_argument('--num-layers', type=int, default=2)  #lstm层数
     """
     transformer 参数
@@ -38,7 +42,7 @@ def get_args():
     训练参数
     """
     parser.add_argument('--batch-size', type=int, default=64)
-    parser.add_argument('--lr', type=float, default=0.0005)
+    parser.add_argument('--lr', type=float, default=0.001)
     parser.add_argument('--lr-min', type=float, default=0.00001)
     parser.add_argument('--use-dropout', action="store_true")
     parser.add_argument('--use-norm', action="store_true") #是否使用归一化层
@@ -99,6 +103,13 @@ if __name__ == '__main__':
             for key, value in vars(args).items():
                 f.write('%s:%s\n' % (key, value))
         args.writer = writer
+
+        """
+        设置随机数种子
+        """
+        np.random.seed(args.seed)
+        torch.manual_seed(args.seed)
+        torch.cuda.manual_seed_all(args.seed)
         if args.algorithm == "hmm":
             print("-------正在训练HMM模型-------")
             vocab_size = len(data_set.word_to_index)
@@ -156,19 +167,19 @@ if __name__ == '__main__':
         """
         if args.algorithm == "hmm":
             hmm_model = load_model(args.test_model_path)
-            x_valid = data_set.x_valid
-            crf_pred = hmm_model.test(x_valid)
-            y_valid = data_set.y_valid  # 真实tag
-            confusion_matrix = ConfusionMatrix(y_valid, crf_pred,data_set.tag_list)
+            x_test = data_set.x_test
+            crf_pred = hmm_model.test(x_test)
+            y_test = data_set.y_test  # 真实tag
+            confusion_matrix = ConfusionMatrix(y_test, crf_pred,data_set.tag_list)
             "打印评估结果"
             confusion_matrix.print_scores()
         elif args.algorithm == "crf":
             print("-------正在评估CRF模型-------")
             crf_model = load_model(args.test_model_path)
-            x_valid = data_set.x_valid
-            crf_pred = crf_model.test(x_valid)
-            y_valid = data_set.y_valid  # 真实tag
-            confusion_matrix = ConfusionMatrix(y_valid, crf_pred,data_set.tag_list)
+            x_test = data_set.x_test
+            crf_pred = crf_model.test(x_test)
+            y_test = data_set.y_test  # 真实tag
+            confusion_matrix = ConfusionMatrix(y_test, crf_pred,data_set.tag_list)
             "打印评估结果"
             confusion_matrix.print_scores()
             # print("------混淆矩阵为---------")
@@ -179,7 +190,7 @@ if __name__ == '__main__':
             bilstm_model = BILSTM_Model(args,data_set)
             print("评估bilstm-crf模型中...")
             bilstm_model.model.load_state_dict(torch.load(args.test_model_path, map_location=args.device))
-            pred_tag_lists, test_tag_lists = bilstm_model.test()
+            pred_tag_lists, test_tag_lists = bilstm_model.test(data_set.x_test,data_set.y_test)
             confusion_matrix = ConfusionMatrix(test_tag_lists, pred_tag_lists,data_set.tag_list)
             "打印评估结果"
             confusion_matrix.print_scores()
@@ -191,7 +202,7 @@ if __name__ == '__main__':
             transformer_model = TransformerCRF_Model(args,data_set)
             print("评估bilstm-crf模型中...")
             transformer_model.model.load_state_dict(torch.load(args.test_model_path, map_location=args.device))
-            pred_tag_lists, test_tag_lists = transformer_model.test()
+            pred_tag_lists, test_tag_lists = transformer_model.test(data_set.x_valid,data_set.y_valid)
             confusion_matrix = ConfusionMatrix(test_tag_lists, pred_tag_lists,data_set.tag_list)
             "打印评估结果"
             confusion_matrix.print_scores()

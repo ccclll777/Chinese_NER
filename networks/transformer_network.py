@@ -30,21 +30,14 @@ class Transformer_CRF(nn.Module):
 
     def forward(self, input_index, input_mask):
         emission = self.build_features(input_index, input_mask)#batch_size*len*128
-        # scores, tags = self.crf(emission, input_mask)
-        # return scores, tags
+
         crf_scores = self.crf(emission)
         return crf_scores
 
-    # def forward_loss(self, input_ids, input_mask, input_lens, input_tags=None):
-    #     emission = self._build_features(input_ids, input_mask)
-    #     if input_tags is not None:
-    #         return emission, self.crf.loss(emission, input_tags, input_mask)
-    #     else:
-    #         return emission
     def test(self, input_index, input_mask,lengths, tag_to_index):
         """
         使用维特比算法进行解码
-        CRF层将BiLSTM的Emission_score作为输入，输出符合标注转移约束条件的、最大可能的预测标注序列。
+        CRF层将Transformer的Emission_score作为输入，输出符合标注转移约束条件的、最大可能的预测标注序列。
         :param test_batch_sentences:
         :param lengths:
         :param tag_to_id:

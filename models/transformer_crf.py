@@ -103,14 +103,14 @@ class TransformerCRF_Model(object):
 
             # 每轮结束测试在验证集上的性能，保存最好的一个
             val_loss = self.validate(i,valid_word_lists, valid_tag_lists)
-            pred_tag_lists, tag_lists = self.test()
-            confusion_matrix = ConfusionMatrix(tag_lists, pred_tag_lists, self.data_set.tag_list)
-            "打印评估结果"
-            confusion_matrix.print_scores()
-            for tag in confusion_matrix.tag_set:
-                self.writer.add_scalar("test/"+tag+"_precision", confusion_matrix.precision_scores[tag], i)
-                self.writer.add_scalar("test/"+tag+"_recall", confusion_matrix.recall_scores[tag], i)
-                self.writer.add_scalar("test/"+tag+"_f1", confusion_matrix.f1_scores[tag], i)
+            # pred_tag_lists, tag_lists = self.test(self.data_set.x_test,self.data_set.y_test)
+            # confusion_matrix = ConfusionMatrix(tag_lists, pred_tag_lists, self.data_set.tag_list)
+            # "打印评估结果"
+            # confusion_matrix.print_scores()
+            # for tag in confusion_matrix.tag_set:
+            #     self.writer.add_scalar("val/"+tag+"_precision", confusion_matrix.precision_scores[tag], i)
+            #     self.writer.add_scalar("val/"+tag+"_recall", confusion_matrix.recall_scores[tag], i)
+            #     self.writer.add_scalar("val/"+tag+"_f1", confusion_matrix.f1_scores[tag], i)
             print("Epoch {}, Val Loss:{:.4f}".format(i, val_loss))
             self.writer.add_scalar("val/loss", val_loss, i)
     def train_step(self, batch_sentences, batch_tags):
@@ -182,14 +182,14 @@ class TransformerCRF_Model(object):
                 self.best_val_loss = val_loss
 
             return val_loss
-    def test(self,):
+    def test(self,word_list,tag_list):
         """
         测试模型
         :return:
         """
         # 准备数据
         temp_test_word_lists, temp_test_tag_lists = self.data_set.prepocess_data_for_lstm_crf(
-            self.data_set.x_test, self.data_set.y_test, test=True
+            word_list, tag_list, test=True
         )
         test_word_lists, test_tag_lists, indices = sort_by_lengths(temp_test_word_lists, temp_test_tag_lists)
         test_token_sentences, lengths,sentences_mask = self.data_set.transformer_word_to_index(test_word_lists, self.data_set.word_to_index)

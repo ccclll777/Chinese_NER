@@ -79,11 +79,11 @@ class HMM(object):
         Pi = torch.log(self.Pi)
 
         # 初始化 维比特矩阵viterbi 它的维度为[状态数, 序列长度]
-        # 其中viterbi[i, j]表示标注序列的第j个标注为i的所有单个序列(i_1, i_2, ..i_j)出现的概率最大值
+        # 其中viterbi[i, j]表示第j个字对应的所有tag（$tag_{1}、tag_{2}...tag_{n}$）出现概率的最大值(每个字对应的预测标签的最大概率)
         seq_len = len(word_list)
         viterbi = torch.zeros(self.tag_size, seq_len)
         # backpointer是跟viterbi一样大小的矩阵
-        # backpointer[i, j]存储的是 标注序列的第j个标注为i时，第j-1个标注的id
+        # backpointer[i, j] 第i行j列表示tag序列的第j个tag对应的字i时，第j-1个tag的id（保存最大概率是从上一个时间点的哪个tag转移过来的。）
         # 等解码的时候，我们用backpointer进行回溯，以求出最优路径
         back_pointer = torch.zeros(self.tag_size, seq_len).long()
 
@@ -121,12 +121,10 @@ class HMM(object):
                 )
                 viterbi[tag_id, step] = max_prob + bt[tag_id]
                 back_pointer[tag_id, step] = max_id
-
         # 终止， t=seq_len 即 viterbi[:, seq_len]中的最大概率，就是最优路径的概率
         best_path_prob, best_path_pointer = torch.max(
             viterbi[:, seq_len-1], dim=0
         )
-
         # 回溯，求最优路径
         best_path_pointer = best_path_pointer.item()
         best_path = [best_path_pointer]
@@ -134,10 +132,8 @@ class HMM(object):
             best_path_pointer = back_pointer[best_path_pointer, back_step]
             best_path_pointer = best_path_pointer.item()
             best_path.append(best_path_pointer)
-
         # 将tag_id组成的序列转化为tag
         assert len(best_path) == len(word_list)
         id2tag = dict((id_, tag) for tag, id_ in tag_to_index.items())
         tag_list = [id2tag[id_] for id_ in reversed(best_path)]
-
         return tag_list

@@ -37,6 +37,7 @@ class BILSTM_Model(object):
                                 use_dropout=args.use_dropout,
                                 use_norm = args.use_norm,
                                 use_bert=args.use_bert ,
+                                fine_tuning = args.fine_tuning,
                                 bert_model_dir =args.bert_model_dir).to(self.device)
         # 训练参数：
         self.epoch = args.epoch
@@ -54,6 +55,7 @@ class BILSTM_Model(object):
         self.step = 0
         self.train_log_step =0
         self.best_val_loss = 1e18
+        self.model_path = None
 
 
 
@@ -66,8 +68,7 @@ class BILSTM_Model(object):
             self.data_set.x_train, self.data_set.y_train
         )
         temp_valid_word_lists, temp_valid_tag_lists = self.data_set.prepocess_data_for_lstm_crf(
-            self.data_set.x_valid, self.data_set.y_valid
-        )
+            self.data_set.x_valid, self.data_set.y_valid)
 
         #数据集按长度排序
         train_word_lists, train_tag_lists, _ = sort_by_lengths(temp_train_word_lists, temp_train_tag_lists)
@@ -97,14 +98,23 @@ class BILSTM_Model(object):
 
             # 每轮结束测试在验证集上的性能，保存最好的一个
             val_loss = self.validate(i,valid_word_lists, valid_tag_lists)
-            pred_tag_lists, tag_lists = self.test()
-            confusion_matrix = ConfusionMatrix(tag_lists, pred_tag_lists, self.data_set.tag_list)
-            "打印评估结果"
-            confusion_matrix.print_scores()
-            for tag in confusion_matrix.tag_set:
-                self.writer.add_scalar("test/"+tag+"_precision", confusion_matrix.precision_scores[tag], i)
-                self.writer.add_scalar("test/"+tag+"_recall", confusion_matrix.recall_scores[tag], i)
-                self.writer.add_scalar("test/"+tag+"_f1", confusion_matrix.f1_scores[tag], i)
+            # print("self.data_set.x_test")
+            # pred_tag_lists, test_tag_lists = self.test(self.data_set.x_test, self.data_set.y_test)
+            # confusion_matrix = ConfusionMatrix(test_tag_lists, pred_tag_lists, self.data_set.tag_list)
+            # "打印评估结果"
+            # confusion_matrix.print_scores()
+            # for tag in confusion_matrix.tag_set:
+            #     self.writer.add_scalar("val/"+tag+"_precision", confusion_matrix.precision_scores[tag], i)
+            #     self.writer.add_scalar("val/"+tag+"_recall", confusion_matrix.recall_scores[tag], i)
+            #     self.writer.add_scalar("val/"+tag+"_f1", confusion_matrix.f1_scores[tag], i)
+            # bilstm_model = BILSTM_Model(self.args,self.data_set)
+            # print("评估bilstm-crf模型中...")
+            # bilstm_model.model.load_state_dict(torch.load(self.model_path , map_location=self.args.device))
+            # pred_tag_lists, test_tag_lists = bilstm_model.test(bilstm_model.data_set.x_valid,bilstm_model.data_set.y_valid)
+            # confusion_matrix = ConfusionMatrix(test_tag_lists, pred_tag_lists,self.data_set.tag_list)
+            # "打印评估结果"
+            # confusion_matrix.print_scores()
+
             print("Epoch {}, Val Loss:{:.4f}".format(i, val_loss))
             self.writer.add_scalar("val/loss", val_loss, i)
     def train_step(self, batch_sentences, batch_tags):
@@ -171,17 +181,18 @@ class BILSTM_Model(object):
                 print("保存模型...")
                 torch.save(self.model.state_dict(),
                            self.args.model_path + "/epoch_"+str(epoch)+".pth")
+                self.model_path = self.args.model_path + "/epoch_"+str(epoch)+".pth"
                 self.best_val_loss = val_loss
 
             return val_loss
-    def test(self,):
+    def test(self,word_list,label_list):
         """
         测试模型
         :return:
         """
         # 准备数据
         temp_test_word_lists, temp_test_tag_lists = self.data_set.prepocess_data_for_lstm_crf(
-            self.data_set.x_test, self.data_set.y_test, test=True
+            word_list, label_list, test=True
         )
         test_word_lists, test_tag_lists, indices = sort_by_lengths(temp_test_word_lists, temp_test_tag_lists)
         test_token_sentences, lengths = self.data_set.bilstm_crf_word_to_index(test_word_lists, self.data_set.word_to_index)

@@ -4,7 +4,7 @@ from networks.bilstm_network import BiLSTM
 from itertools import zip_longest
 from networks.crf import CRF
 class BiLSTM_CRF(nn.Module):
-    def __init__(self, vocab_size, embedding_size, hidden_size, out_size,num_layers,device,dropout,use_dropout=True,use_norm = True,use_bert= False,bert_model_dir = ""):
+    def __init__(self, vocab_size, embedding_size, hidden_size, out_size,num_layers,device,dropout,use_dropout=True,use_norm = True,use_bert= False,fine_tuning =False,bert_model_dir = ""):
         """初始化参数：
         BiLSTM-CRF其实就是一个CRF模型，只不过用BiLSTM得到状态特征值sk，用反向传播算法更新转移特征值tk 。
             vocab_size:字典的大小
@@ -22,6 +22,7 @@ class BiLSTM_CRF(nn.Module):
                              use_dropout=use_dropout,
                              use_norm=use_norm,
                              use_bert=use_bert,
+                             fine_tuning = fine_tuning,
                              bert_model_dir=bert_model_dir)
         self.device = device
         self.crf = CRF(out_size,device)
