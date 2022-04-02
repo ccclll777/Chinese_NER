@@ -10,12 +10,13 @@ from utils import  save_model,load_model
 from evaluate import ConfusionMatrix
 from models.bilstm_crf import BILSTM_Model
 from models.transformer_crf import TransformerCRF_Model
+from models.bert_crf import BertCRFModel
 from torch.utils.tensorboard import SummaryWriter
 base_dir = os.getcwd()
 def get_args():
     parser = argparse.ArgumentParser()
-    #[hmm,crf,bilstm-crf,transformer-crf】
-    parser.add_argument('--algorithm', type=str, default="transformer-crf",choices=["hmm","crf","bilstm-crf","transformer-crf"])  # 用于选择哪种算法
+    #[hmm,crf,bilstm-crf,transformer-crf,bert-crf】
+    parser.add_argument('--algorithm', type=str, default="bert-crf",choices=["hmm","crf","bilstm-crf","transformer-crf","bert-crf"])  # 用于选择哪种算法
     #['msra','clue'】
     parser.add_argument('--data-set', type=str, default="clue")  # 用于选择那个数据集
     parser.add_argument('--min-freq', type=int, default=10)  # 去掉频率小于min-freq的字
@@ -27,29 +28,44 @@ def get_args():
     parser.add_argument('--use-bert', action="store_true")
     parser.add_argument('--fine-tuning', action="store_true") #是否微调bert
 
-    parser.add_argument('--bert-model-dir', type=str, default="/bert/asasahng")
+    parser.add_argument('--bert-model-dir', type=str, default="/bert/bert-base-chinese")
     parser.add_argument('--embedding-size', type=int, default=128) #bert bilstm用768
     parser.add_argument('--hidden-size', type=int, default=256)  #bert bilstm用384
     parser.add_argument('--num-layers', type=int, default=2)  #lstm层数
     """
-    transformer 参数
+    差分学习率和warmup配置
     """
-    parser.add_argument('--d-model', type=int, default=128)#transformer model的维度 论文是512
-    parser.add_argument('--num-blocks', type=int, default=2)#transformer block的数量
-    parser.add_argument('--num-heads', type=int, default=4) #attention的head数
-    parser.add_argument('--feedforward-dim', type=int, default=512)  #feedforward的隐藏层dim
+    # 2e-5
+    parser.add_argument('--bert-lr', default=3e-5, type=float,
+                        help='bert学习率')
+    # 2e-3
+    parser.add_argument('--lr', default=3e-4, type=float,help='bilstm学习率')
+    parser.add_argument('--crf-lr', default=3e-2, type=float, help='crf学习率')
+    # 0.5
+    parser.add_argument('--warmup-proportion', default=0.1, type=float,help= " warm up的步数比例x（全局总训练次数t中前x*t步）")
+
+    parser.add_argument('--weight-decay', default=0.01, type=float,help="权重衰减的比例")
+
+    parser.add_argument('--adam-epsilon', default=1e-8, type=float)
     """
     训练参数
     """
     parser.add_argument('--batch-size', type=int, default=64)
-    parser.add_argument('--lr', type=float, default=0.001)
-    parser.add_argument('--lr-min', type=float, default=0.00001)
+
     parser.add_argument('--use-dropout', action="store_true")
     parser.add_argument('--use-norm', action="store_true") #是否使用归一化层
     parser.add_argument('--dropout', type=float, default=0.1)
     parser.add_argument('--epoch', type=int, default=100)
-    parser.add_argument('--grad-norm', default=5.0, type=float) #梯度裁剪
+    parser.add_argument('--grad-norm', default=1.0, type=float) #梯度裁剪
     parser.add_argument('--use-grad-norm', action="store_true")
+    """
+    transformer 参数
+    """
+    parser.add_argument('--d-model', type=int, default=128,help="transformer model的维度 论文是512")
+    parser.add_argument('--num-blocks', type=int, default=2,help="transformer block的数量")#
+    parser.add_argument('--num-heads', type=int, default=4,help="attention的head数")
+    parser.add_argument('--feedforward-dim', type=int, default=512,help="feedforward的隐藏层dim")
+
 
 
     parser.add_argument('--log-step', type=int, default=5)
@@ -143,22 +159,19 @@ if __name__ == '__main__':
             confusion_matrix = ConfusionMatrix(y_valid, predict__tag_lists,data_set.tag_list)
             "打印评估结果"
             confusion_matrix.print_scores()
-            # print("------混淆矩阵为---------")
-            # confusion_matrix.report_confusion_matrix()
         elif args.algorithm == "bilstm-crf":
             #如果是bilstm-crf 还要加入<START>和<END> (解码的时候需要用到)
             data_set.extend_maps()
-            vocab_size = len(data_set.word_to_index)
-            out_size = len(data_set.tag_to_index)
             bilstm_model = BILSTM_Model(args,data_set)
             bilstm_model.train()
         elif args.algorithm == "transformer-crf":
             data_set.extend_maps()
-            vocab_size = len(data_set.word_to_index)
-            out_size = len(data_set.tag_to_index)
             transformer_model = TransformerCRF_Model(args,data_set)
             transformer_model.train()
-
+        elif args.algorithm == "bert-crf":
+            data_set.extend_maps()
+            transformer_model = BertCRFModel(args,data_set)
+            transformer_model.train()
 
     else:
         args.test_model_path = base_dir + args.test_model_path

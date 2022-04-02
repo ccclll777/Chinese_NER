@@ -1,10 +1,10 @@
-
 import torch
+from networks.bert_crf_network import BertCRF
+from tqdm import tqdm
 from utils import sort_by_lengths,build_optimizer_and_scheduler
-from networks.bilstm_crf_network import BiLSTM_CRF
-class BILSTM_Model(object):
+class BertCRFModel(object):
     def __init__(self, args,data_set):
-        """功能：对LSTM的模型进行训练与测试
+        """功能：对BertCRF的模型进行训练与测试
            参数:
             vocab_size:词典大小
             out_size:标注种类
@@ -16,32 +16,24 @@ class BILSTM_Model(object):
         self.args = args
         self.data_set = data_set
         self.vocab_size = len(data_set.word_to_index)
-        self.out_size = len(data_set.tag_to_index)
+        self.num_tags = len(data_set.tag_to_index)
         self.device = args.device
-        # 加载模型参数
-        self.embedding_size = args.embedding_size
+
         self.hidden_size =  args.hidden_size
-        self.model = BiLSTM_CRF(vocab_size=self.vocab_size,
-                                embedding_size=self.embedding_size,
-                                hidden_size=self.hidden_size,
-                                out_size=self.out_size,
-                                num_layers=args.num_layers,
-                                device=self.device,
-                                dropout=args.dropout,
-                                use_dropout=args.use_dropout,
-                                use_norm = args.use_norm,
-                                use_bert=args.use_bert ,
-                                fine_tuning = args.fine_tuning,
-                                bert_model_dir =args.bert_model_dir).to(self.device)
+        # 根据是否添加crf初始化不同的模型 选择不一样的损失计算函数
+        self.model = BertCRF(hidden_size = self.hidden_size,
+                 num_tags = self.num_tags,
+                 # num_layers = args.num_layers,
+                 device = self.device,
+                 dropout = args.dropout,
+                 bert_model_dir = args.bert_model_dir).to(args.device)
         # 训练参数：
         self.epoch = args.epoch
         self.log_step = args.log_step
-        self.lr = args.lr
         self.batch_size = args.batch_size
-        #对梯度进行裁剪
         self.grad_norm = args.grad_norm
         self.use_grad_norm = args.use_grad_norm
-        # 初始化优化器
+        # 初始化优化器 使用差分学习率
         self.t_total = len(self.data_set.x_train) * self.epoch
         self.optimizer, self.scheduler = build_optimizer_and_scheduler(args, self.model, self.t_total)
         # self.optimizer = optim.Adam(self.model.parameters(), lr=self.lr)
@@ -51,9 +43,6 @@ class BILSTM_Model(object):
         self.step = 0
         self.train_log_step =0
         self.best_val_loss = 1e18
-        self.model_path = None
-
-
 
     def train(self):
         """
@@ -64,19 +53,19 @@ class BILSTM_Model(object):
             self.data_set.x_train, self.data_set.y_train
         )
         temp_valid_word_lists, temp_valid_tag_lists = self.data_set.prepocess_data_for_lstm_crf(
-            self.data_set.x_valid, self.data_set.y_valid)
+            self.data_set.x_valid, self.data_set.y_valid
+        )
 
         #数据集按长度排序
-        train_word_lists, train_tag_lists, _ = sort_by_lengths(temp_train_word_lists, temp_train_tag_lists)
-        valid_word_lists, valid_tag_lists, _ = sort_by_lengths(temp_valid_word_lists, temp_valid_tag_lists)
-
-        self.model.zero_grad()#model.zero_grad()的作用是将所有模型参数的梯度置为0
+        train_word_lists, train_tag_lists, train_word_lengths = sort_by_lengths(temp_train_word_lists, temp_train_tag_lists)
+        valid_word_lists, valid_tag_lists, valid_word_lengths = sort_by_lengths(temp_valid_word_lists, temp_valid_tag_lists)
+        self.model.zero_grad()
         for i in range(self.epoch):
             self.model.train()
             self.step = 0
             losses = 0
             #按照batch进行训练
-            for index in range(0, len(train_word_lists), self.batch_size):
+            for index in tqdm(range(0, len(train_word_lists), self.batch_size)):
                 #切分出一个batch的数据
                 batch_sents = train_word_lists[index:index+self.batch_size]
                 batch_tags = train_tag_lists[index:index+self.batch_size]
@@ -93,13 +82,8 @@ class BILSTM_Model(object):
                     self.train_log_step+=1
                     self.writer.add_scalar("train/loss", losses / self.log_step, self.train_log_step)
                     losses = 0.
-
             # 每轮结束测试在验证集上的性能，保存最好的一个
             val_loss = self.validate(i,valid_word_lists, valid_tag_lists)
-
-            # "打印评估结果"
-            # confusion_matrix.print_scores()
-
             print("Epoch {}, Val Loss:{:.4f}".format(i, val_loss))
             self.writer.add_scalar("val/loss", val_loss, i)
     def train_step(self, batch_sentences, batch_tags):
@@ -112,22 +96,30 @@ class BILSTM_Model(object):
         self.model.train()
         self.step += 1
         # 准备数据 将数据集转化为index
-        token_sentences, lengths = self.data_set.bilstm_crf_word_to_index(batch_sentences,
+        token_sentences, lengths,sentences_mask,token_type_ids = self.data_set.bert_crf_word_to_index(batch_sentences,
                                             self.data_set.word_to_index)
         token_sentences = token_sentences.to(self.device)
-        target_tags, lengths = self.data_set.bilstm_crf_word_to_index(batch_tags,
+        sentences_mask = sentences_mask.to(self.device)
+        token_type_ids = token_type_ids.to(self.device)
+
+        target_tags, lengths,_,_ = self.data_set.bert_crf_word_to_index(batch_tags,
                                             self.data_set.tag_to_index)
         target_tags = target_tags.to(self.device)
+
         # forward
-        scores = self.model(token_sentences, lengths)
+        scores = self.model(token_sentences, sentences_mask,token_type_ids)
+
         # 计算损失 更新参数
+        # self.optimizer.zero_grad()
         loss = self.model.crf.cal_lstm_crf_loss(scores, target_tags,self.data_set.tag_to_index).to(self.device)
-        loss.backward()
+
         if self.use_grad_norm:
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
+        loss.backward()
         self.optimizer.step()
         self.scheduler.step()
         self.model.zero_grad()
+        # self.optimizer.step()
         return loss.item()
     def validate(self,epoch,valid_word_lists,valid_tag_lists):
         """
@@ -148,18 +140,19 @@ class BILSTM_Model(object):
                 batch_sentences = valid_word_lists[index:index+self.batch_size]
                 batch_tags = valid_tag_lists[index:index+self.batch_size]
                 #将数据转化为index
-                valid_token_sentences, lengths = self.data_set.bilstm_crf_word_to_index(
+                valid_token_sentences, lengths,sentences_mask,valid_token_type_ids= self.data_set.bert_crf_word_to_index(
                     batch_sentences,self.data_set.word_to_index)
                 valid_token_sentences = valid_token_sentences.to(self.device)
-                target_tags, lengths = self.data_set.bilstm_crf_word_to_index(batch_tags,
+                valid_token_type_ids = valid_token_type_ids.to(self.device)
+                sentences_mask = sentences_mask.to(self.device)
+                target_tags, lengths,_,_ = self.data_set.bert_crf_word_to_index(batch_tags,
                                                                           self.data_set.tag_to_index)
                 target_tags = target_tags.to(self.device)
 
                 # forward
-                scores,pred_tag_ids = self.model.test(valid_token_sentences, lengths,self.data_set.tag_to_index)
+                scores = self.model(valid_token_sentences, sentences_mask,valid_token_type_ids)
                 # 计算损失
-                loss = self.model.crf.cal_lstm_crf_loss(
-                    scores, target_tags,self.data_set.tag_to_index).to(self.device)
+                loss = self.model.crf.cal_lstm_crf_loss(scores, target_tags, self.data_set.tag_to_index).to(self.device)
                 val_losses += loss.item()
             val_loss = val_losses / val_step
 
@@ -167,31 +160,27 @@ class BILSTM_Model(object):
                 print("保存模型...")
                 torch.save(self.model.state_dict(),
                            self.args.model_path + "/epoch_"+str(epoch)+".pth")
-                self.model_path = self.args.model_path + "/epoch_"+str(epoch)+".pth"
                 self.best_val_loss = val_loss
 
             return val_loss
-    def test(self,word_list,label_list):
+    def test(self,word_list,tag_list):
         """
         测试模型
         :return:
         """
         # 准备数据
-        temp_test_word_lists, temp_test_tag_lists = self.data_set.prepocess_data_for_lstm_crf(
-            word_list, label_list, test=True
-        )
+        temp_test_word_lists, temp_test_tag_lists = self.data_set.prepocess_data_for_lstm_crf(word_list, tag_list, test=True)
         test_word_lists, test_tag_lists, indices = sort_by_lengths(temp_test_word_lists, temp_test_tag_lists)
-        test_token_sentences, lengths = self.data_set.bilstm_crf_word_to_index(test_word_lists, self.data_set.word_to_index)
+        test_token_sentences, lengths,sentences_mask,test_token_type_ids = self.data_set.bert_crf_word_to_index(test_word_lists, self.data_set.word_to_index)
         test_token_sentences = test_token_sentences.to(self.device)
+        sentences_mask = sentences_mask.to(self.device)
+        test_token_type_ids = test_token_type_ids.to(self.device)
 
         self.model.eval()
         with torch.no_grad():
-            crf_scores, batch_tagids = self.model.test(
-                test_token_sentences, lengths,self.data_set.tag_to_index)
-
+            crf_scores, batch_tagids = self.model.test(test_token_sentences,sentences_mask,test_token_type_ids, lengths,self.data_set.tag_to_index)
         # 将id转化为标注
         pred_tag_lists = []
-        # id2tag = dict((id_, tag) for tag, id_ in self.data_set.tag_to_index.items())
         for i, ids in enumerate(batch_tagids):
             tag_list = []
             for j in range(lengths[i] - 1):  # crf解码过程中，end被舍弃

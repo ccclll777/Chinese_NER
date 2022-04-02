@@ -1,20 +1,10 @@
-from itertools import zip_longest
-from copy import deepcopy
-import time
 import torch
-from tqdm import tqdm
-from evaluate import ConfusionMatrix
-import torch.nn as nn
 from networks.transformer_network import Transformer_CRF
 import torch.optim as optim
-from utils import sort_by_lengths
-from networks.bilstm_crf_network import BiLSTM_CRF
+from utils import sort_by_lengths,build_optimizer_and_scheduler
 class TransformerCRF_Model(object):
     def __init__(self, args,data_set):
-        """功能：对LSTM的模型进行训练与测试
-           参数:
-            vocab_size:词典大小
-            out_size:标注种类
+        """对Transformer的模型进行训练与测试
         """
         if args.test == False:
             self.writer = args.writer
@@ -41,27 +31,12 @@ class TransformerCRF_Model(object):
         self.grad_norm = args.grad_norm
         self.use_grad_norm = args.use_grad_norm
         # 初始化优化器
-        self.optimizer = optim.Adam(self.model.parameters(), lr=self.lr)
-        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(
-            self.optimizer, float(self.epoch), eta_min=args.lr_min)
+        self.t_total = len(self.data_set.x_train) * self.epoch
+        self.optimizer, self.scheduler = build_optimizer_and_scheduler(args, self.model, self.t_total)
         # 初始化其他指标
         self.step = 0
         self.train_log_step =0
         self.best_val_loss = 1e18
-    def indexed(self,target_tags, tag_set_size, start_id):
-        """
-        将targets中的数转化为在[T*T]大小序列中的索引,T是标注的种类
-        :param target_tags:
-        :param tag_set_size:
-        :param start_id:
-        :return:
-        """
-        batch_size, max_len = target_tags.size()
-        for col in range(max_len - 1, 0, -1):  # 从后向前遍历
-            target_tags[:, col] += (target_tags[:, col - 1] * tag_set_size)
-        target_tags[:, 0] += (start_id * tag_set_size)
-        return target_tags
-
     def train(self):
         """
         训练 bilstm crf
@@ -77,7 +52,7 @@ class TransformerCRF_Model(object):
         #数据集按长度排序
         train_word_lists, train_tag_lists, train_word_lengths = sort_by_lengths(temp_train_word_lists, temp_train_tag_lists)
         valid_word_lists, valid_tag_lists, valid_word_lengths = sort_by_lengths(temp_valid_word_lists, temp_valid_tag_lists)
-
+        self.model.zero_grad()#model.zero_grad()的作用是将所有模型参数的梯度置为0
         for i in range(self.epoch):
             self.model.train()
             self.step = 0
@@ -134,12 +109,13 @@ class TransformerCRF_Model(object):
         # forward
         scores = self.model(token_sentences, sentences_mask)
         # 计算损失 更新参数
-        self.optimizer.zero_grad()
         loss = self.model.crf.cal_lstm_crf_loss(scores, target_tags,self.data_set.tag_to_index).to(self.device)
         loss.backward()
         if self.use_grad_norm:
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
         self.optimizer.step()
+        self.scheduler.step()
+        self.model.zero_grad()
         return loss.item()
     def validate(self,epoch,valid_word_lists,valid_tag_lists):
         """

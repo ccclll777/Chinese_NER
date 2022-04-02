@@ -149,6 +149,7 @@ class DataSet():
             if not test:  # 如果是测试数据，就不需要加end token了
                 tag_lists[i].append("<SEP>")
         return word_lists, tag_lists
+
     def bilstm_crf_word_to_index(self,list,maps):
         """
          bilstm_crf训练时，将句子或者tags映射成index
@@ -190,5 +191,30 @@ class DataSet():
         # words_list各个元素的长度
         lengths = [len(line) for line in list]
         return batch_tensor, lengths,mask
+
+    def bert_crf_word_to_index(self,list,maps):
+        """
+         bert训练时，将句子或者tags映射成index 并且构造mask 然后还需要构造token_type_ids 由于我们只有一个句子   所以全0即可
+        :param words_list:
+        :param maps:  映射的dict word_to_index 或者tag_to_index
+        :return:
+        """
+        PAD = maps.get('<PAD>')
+        UNK = maps.get('<UNK>')
+        max_len = len(list[0])
+        batch_size = len(list)
+        batch_tensor = torch.ones(batch_size, max_len).long() * PAD
+        """
+        构造mask
+        """
+        mask = torch.LongTensor(batch_size, max_len).fill_(0)
+        token_type_ids = torch.LongTensor(batch_size, max_len).fill_(0)
+        for i, line in enumerate(list):
+            for j, word in enumerate(line):
+                batch_tensor[i][j] = maps.get(word, UNK)
+            mask[i, :len(line)] = torch.tensor([1] * len(line), dtype=torch.long)
+        # words_list各个元素的长度
+        lengths = [len(line) for line in list]
+        return batch_tensor, lengths,mask,token_type_ids
 # data_set = DataSet()
 # data_set.load_data()

@@ -61,7 +61,7 @@ class ConfusionMatrix(object):
         f1_scores = {}
         for tag in self.tag_set:
             precision, recall = self.precision_scores[tag], self.recall_scores[tag]
-            f1_scores[tag] = 2*precision*recall / (precision+precision+1e-10)
+            f1_scores[tag] = 2*precision*recall / (recall+precision+1e-10)
         return f1_scores
     def get_correct_tag(self):
         """

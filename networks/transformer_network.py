@@ -36,12 +36,13 @@ class Transformer_CRF(nn.Module):
 
     def test(self, input_index, input_mask,lengths, tag_to_index):
         """
-        使用维特比算法进行解码
+                使用维特比算法进行解码
         CRF层将Transformer的Emission_score作为输入，输出符合标注转移约束条件的、最大可能的预测标注序列。
-        :param test_batch_sentences:
-        :param lengths:
-        :param tag_to_id:
-        :return:
+        :param input_index:  word_list
+        :param input_mask:  word mask
+        :param lengths:  每个句子的长度
+        :param tag_to_index: tag到index的映射
+         :return:
         """
         """使用维特比算法进行解码"""
         emission = self.build_features(input_index, input_mask)  #batch_size*len*128 # [batch_size, length, out_size]

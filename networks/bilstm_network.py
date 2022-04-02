@@ -20,8 +20,11 @@ class BiLSTM(nn.Module):
         self.use_bert = use_bert
         self.use_norm = use_norm
         self.fine_tuning = fine_tuning
+        self.hidden_size = hidden_size
+        self.embedding_size = embedding_size
         if use_bert:
             self.bert_embedding = BertModel.from_pretrained(bert_model_dir)
+            self.embedding_size = self.bert_embedding.config.hidden_size
             for param in self.bert_embedding.parameters():
                 param.requires_grad = self.fine_tuning
             # self.embedding_size = self.bert_embedding.
@@ -30,22 +33,22 @@ class BiLSTM(nn.Module):
         if self.use_dropout:
             self.dropout = nn.Dropout(dropout)
             # batch_first： 如果是True，则input为(batch, seq, input_size)。默认值为：False（seq_len, batch, input_size）
-            self.bilstm = nn.LSTM(input_size=embedding_size, hidden_size=hidden_size,
+            self.bilstm = nn.LSTM(input_size=self.embedding_size, hidden_size=self.hidden_size,
                                   batch_first=True,
                                   bidirectional=True,
                                   num_layers=num_layers,
                                   dropout=dropout
                                   )
         else:
-            self.bilstm = nn.LSTM(input_size=embedding_size, hidden_size=hidden_size,
+            self.bilstm = nn.LSTM(input_size=self.embedding_size, hidden_size=self.hidden_size,
                                   batch_first=True,
                                   bidirectional=True,
                                   num_layers=num_layers )
 
 
         if self.use_norm:
-            self.layer_norm = LayerNorm(hidden_size * 2)
-        self.linear = nn.Linear(2*hidden_size, out_size) #将biilist
+            self.layer_norm = LayerNorm(self.hidden_size * 2)
+        self.linear = nn.Linear(2*self.hidden_size, out_size) #将biilist
     def bert_encoder(self, x):
         """
         使用预训练的bert进行encoder

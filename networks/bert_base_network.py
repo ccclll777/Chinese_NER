@@ -4,9 +4,9 @@ from transformers import BertModel
 class BaseBertModel(nn.Module):
     def __init__(self, bert_dir, dropout):
         super(BaseBertModel, self).__init__()
-        bert_config_path = os.path.join(bert_dir, 'bert_config.json')
+        # bert_config_path = os.path.join(bert_dir, 'config.json')
         #加载与训练的Bert
-        self.bert_module = BertModel.from_pretrained(bert_config_path, output_hidden_states=True,
+        self.bert_module = BertModel.from_pretrained(bert_dir, output_hidden_states=True,
                                                      hidden_dropout_prob=dropout)
         self.bert_config = self.bert_module.config
 
