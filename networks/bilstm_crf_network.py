@@ -6,7 +6,7 @@ from networks.crf import CRF
 class BiLSTM_CRF(nn.Module):
     def __init__(self, vocab_size, embedding_size, hidden_size, out_size,num_layers,device,dropout,use_dropout=True,use_norm = True,use_bert= False,fine_tuning =False,bert_model_dir = ""):
         """初始化参数：
-        BiLSTM-CRF其实就是一个CRF模型，只不过用BiLSTM得到状态特征值sk，用反向传播算法更新转移特征值tk 。
+            BiLSTM-CRF其实就是一个CRF模型，只不过用BiLSTM得到状态特征值sk，用反向传播算法更新转移特征值tk 。
             vocab_size:字典的大小
             embedding_size:词向量的维数
             hidden_size：隐向量的维数

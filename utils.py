@@ -23,7 +23,6 @@ def sort_by_lengths(word_lists, tag_lists):
                      reverse=True)
     pairs = [pairs[i] for i in indices]
     word_lists, tag_lists = list(zip(*pairs))
-
     return word_lists, tag_lists, indices
 
 

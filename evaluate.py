@@ -100,10 +100,11 @@ class ConfusionMatrix(object):
                 elif predict_tag != "<PAD>" and predict_tag != "<SEP>" and predict_tag != "<CLS>" and predict_tag != "<UNK>":
                     predict_tag_dict[predict_tag[2:]] += 1
         return gold_tag_dict,predict_tag_dict
-    def get_average(self):
+    def calculate_average(self):
 
         average = {}
         total = len(self.tags)
+
         # 计算weighted precisions:
         average['precision'] = 0.
         average['recall'] = 0.
@@ -116,6 +117,7 @@ class ConfusionMatrix(object):
 
         for metric in average.keys():
             average[metric] /= total
+
         return average
     def print_scores(self):
         """
@@ -132,38 +134,9 @@ class ConfusionMatrix(object):
 
 
         # 计算并打印平均值
-        # average = self.get_average()
-        # table.add_row(['avg/total', str( average['precision']),
-        #                    str(average['recall']), str(average['f1_score']),
-        #                    str(len(self.tags))])
+        average = self.calculate_average()
+        table.add_row(['avg/total', str( average['precision']),
+                           str(average['recall']), str(average['f1_score']),
+                           str(len(self.tags))])
         print(table)
         # return self.precision_scores,self.recall_scores,self.f1_scores
-
-    def report_confusion_matrix(self):
-        """
-        计算混淆矩阵
-        :return:
-        """
-        tag_list = list(self.tag_set)
-        # 初始化混淆矩阵 matrix[i][j]表示第i个tag被模型预测成第j个tag的次数
-        tags_size = len(tag_list)
-        matrix = []
-        for i in range(tags_size):
-            matrix.append([0] * tags_size)
-
-        # 遍历tags列表
-        for tag, predict_tag in zip(self.tags, self.predict_tags):
-            try:
-                row = tag_list.index(tag)
-                col = tag_list.index(predict_tag)
-                matrix[row][col] += 1
-            except ValueError:  # 有极少数标记没有出现在golden_tags，但出现在predict_tags，跳过这些标记
-                continue
-        # 输出矩阵
-        table = PrettyTable(['    ', tag_list[0],tag_list[1], tag_list[2], tag_list[3],
-                             tag_list[4], tag_list[5], tag_list[6], tag_list[7], tag_list[8], tag_list[9]])
-        for i, row in enumerate(matrix):
-            table.add_row(
-                [tag_list[i], str(row[0]), str(row[1]), str(row[2]), str(row[3]), str(row[4]),
-                 str(row[5]),str(row[6]), str(row[7]), str(row[8]), str(row[9])])
-        print(table)

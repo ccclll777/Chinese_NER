@@ -15,14 +15,33 @@ class CRFModel(object):
                          all_possible_transitions=all_possible_transitions)
 
     def train(self, sentences, tag_lists):
+        """
+        训练CRF模型
+        :param sentences:
+        :param tag_lists:
+        :return:
+        """
         features = [self.sentence_to_features(s) for s in sentences]
         self.model.fit(features, tag_lists)
 
     def test(self, sentences):
+        """
+        测试集测试
+        :param sentences:
+        :return:
+        """
         features = [self.sentence_to_features(s) for s in sentences]
         pred_tag_lists = self.model.predict(features)
         return pred_tag_lists
-
+    def sentence_ner(self,sentence):
+        """
+        输入句子进行命名实体识别
+        :param sentence:
+        :return:
+        """
+        sentence_feature = [self.sentence_to_features(sentence)]
+        tag_list = self.model.predict(sentence_feature)
+        return tag_list
     def word_to_features(self,sentence, i):
         """
         抽取单个字的特征

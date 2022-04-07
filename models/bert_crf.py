@@ -9,7 +9,7 @@ class BertCRFModel(object):
             vocab_size:词典大小
             out_size:标注种类
         """
-        if args.test == False:
+        if args.test == False and  args.sentence_ner == False:
             self.writer = args.writer
         else:
             self.writer = None
@@ -46,7 +46,7 @@ class BertCRFModel(object):
 
     def train(self):
         """
-        训练 bilstm crf
+        训练 bert crf
         :return:
         """
         temp_train_word_lists, temp_train_tag_lists = self.data_set.prepocess_data_for_lstm_crf(
@@ -163,6 +163,29 @@ class BertCRFModel(object):
                 self.best_val_loss = val_loss
 
             return val_loss
+    def sentence_ner(self,sentence):
+        """
+        输入句子进行命名实体识别
+        :param sentence:
+        :return:
+        """
+        sentence_list = [i for i in sentence]
+        sentence_list.append("<SEP>")
+        token_sentences, lengths,sentences_mask,token_type_ids  = self.data_set.bert_crf_word_to_index([sentence_list], self.data_set.word_to_index)
+        token_sentences = token_sentences.to(self.device)
+        sentences_mask = sentences_mask.to(self.device)
+        token_type_ids = token_type_ids.to(self.device)
+
+        self.model.eval()
+        with torch.no_grad():
+            crf_scores, tag_index = self.model.test(token_sentences,sentences_mask,token_type_ids, lengths,self.data_set.tag_to_index)
+        pred_tag_lists = []
+        for i, ids in enumerate(tag_index):
+            tag_list = []
+            for j in range(lengths[i] - 1):  # crf解码过程中，end被舍弃
+                tag_list.append(self.data_set.index_to_tag[ids[j].item()])
+            pred_tag_lists.append(tag_list)
+        return pred_tag_lists
     def test(self,word_list,tag_list):
         """
         测试模型

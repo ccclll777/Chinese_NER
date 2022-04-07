@@ -6,7 +6,7 @@ class TransformerCRF_Model(object):
     def __init__(self, args,data_set):
         """对Transformer的模型进行训练与测试
         """
-        if args.test == False:
+        if args.test == False and  args.sentence_ner == False:
             self.writer = args.writer
         else:
             self.writer = None
@@ -78,14 +78,7 @@ class TransformerCRF_Model(object):
 
             # 每轮结束测试在验证集上的性能，保存最好的一个
             val_loss = self.validate(i,valid_word_lists, valid_tag_lists)
-            # pred_tag_lists, tag_lists = self.test(self.data_set.x_test,self.data_set.y_test)
-            # confusion_matrix = ConfusionMatrix(tag_lists, pred_tag_lists, self.data_set.tag_list)
-            # "打印评估结果"
-            # confusion_matrix.print_scores()
-            # for tag in confusion_matrix.tag_set:
-            #     self.writer.add_scalar("val/"+tag+"_precision", confusion_matrix.precision_scores[tag], i)
-            #     self.writer.add_scalar("val/"+tag+"_recall", confusion_matrix.recall_scores[tag], i)
-            #     self.writer.add_scalar("val/"+tag+"_f1", confusion_matrix.f1_scores[tag], i)
+           
             print("Epoch {}, Val Loss:{:.4f}".format(i, val_loss))
             self.writer.add_scalar("val/loss", val_loss, i)
     def train_step(self, batch_sentences, batch_tags):
@@ -158,6 +151,28 @@ class TransformerCRF_Model(object):
                 self.best_val_loss = val_loss
 
             return val_loss
+    def sentence_ner(self,sentence):
+        """
+        输入句子进行命名实体识别
+        :param sentence:
+        :return:
+        """
+        sentence_list = [i for i in sentence]
+        sentence_list.append("<SEP>")
+        token_sentences, lengths,sentences_mask = self.data_set.transformer_word_to_index([sentence_list], self.data_set.word_to_index)
+        token_sentences = token_sentences.to(self.device)
+        sentences_mask = sentences_mask.to(self.device)
+
+        self.model.eval()
+        with torch.no_grad():
+            crf_scores, tag_index = self.model.test(token_sentences,sentences_mask, lengths,self.data_set.tag_to_index)
+        pred_tag_lists = []
+        for i, ids in enumerate(tag_index):
+            tag_list = []
+            for j in range(lengths[i] - 1):  # crf解码过程中，end被舍弃
+                tag_list.append(self.data_set.index_to_tag[ids[j].item()])
+            pred_tag_lists.append(tag_list)
+        return pred_tag_lists
     def test(self,word_list,tag_list):
         """
         测试模型

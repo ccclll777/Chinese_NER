@@ -30,7 +30,7 @@ def get_args():
 
     parser.add_argument('--bert-model-dir', type=str, default="/bert/bert-base-chinese")
     parser.add_argument('--embedding-size', type=int, default=128) #bert bilstm用768
-    parser.add_argument('--hidden-size', type=int, default=256)  #bert bilstm用384
+    parser.add_argument('--hidden-size', type=int, default=200)  #bert bilstm用384
     parser.add_argument('--num-layers', type=int, default=2)  #lstm层数
     """
     差分学习率和warmup配置
@@ -50,7 +50,7 @@ def get_args():
     """
     训练参数
     """
-    parser.add_argument('--batch-size', type=int, default=64)
+    parser.add_argument('--batch-size', type=int, default=32)
 
     parser.add_argument('--use-dropout', action="store_true")
     parser.add_argument('--use-norm', action="store_true") #是否使用归一化层
@@ -79,8 +79,10 @@ def get_args():
     """
     测试模型
     """
-    parser.add_argument('--test-model-path', type=str, default="/checkpoints/clue/bilstm-crf/epoch_0.pth")
-    parser.add_argument('--test', action="store_true")
+    parser.add_argument('--test-model-path', type=str, default="/checkpoints/clue/bert-crf/epoch_475.pth")
+    parser.add_argument('--test', action="store_false")
+    #对单个句子进行命名实体识别任务
+    parser.add_argument('--sentence-ner',action="store_true")
     args = parser.parse_known_args()[0]
     return args
 
@@ -92,7 +94,52 @@ if __name__ == '__main__':
     args.bert_model_dir = base_dir+args.bert_model_dir
     args.model_path = args.model_path+args.data_set +"/"
     args.logs = args.logs+args.data_set +"/"
-    if args.test == False:
+    if args.sentence_ner:
+        """
+        对单个句子进行命名实体识别
+        """
+        args.test_model_path = base_dir + args.test_model_path
+        print("对单个句子进行命名实体识别")
+        """加载模型"""
+        if args.algorithm == "hmm":
+
+            print("加载HMM模型")
+            model = load_model(args.test_model_path)
+        elif args.algorithm == "crf":
+            print("加载CRF模型")
+            model = load_model(args.test_model_path)
+        elif args.algorithm == "bilstm-crf":
+            data_set.extend_maps()
+            print("加载bilstm-crf模型")
+            model = BILSTM_Model(args, data_set)
+            model.model.load_state_dict(torch.load(args.test_model_path, map_location=args.device))
+        elif args.algorithm == "transformer-crf":
+            data_set.extend_maps()
+            print("加载transformer-crf模型")
+            model = TransformerCRF_Model(args, data_set)
+            model.model.load_state_dict(torch.load(args.test_model_path, map_location=args.device))
+        elif args.algorithm == "bert-crf":
+            data_set.extend_maps()
+            print("加载bert-crf模型")
+            model = BertCRFModel(args, data_set)
+            model.model.load_state_dict(torch.load(args.test_model_path, map_location=args.device))
+        while True:
+            print("请输入句子，输入break停止 ")
+            sentence = input("input:")
+            # sentence = "近年来，丹棱县等地一些不知名的石窟迎来了海内外的游客"
+            if sentence == "break": break
+            tag_list = model.sentence_ner(sentence)
+            result = ""
+            tag_list = tag_list[0]
+            for i in range(len(sentence)):
+                if tag_list[i] !="o":
+                    result += "("+sentence[i] +tag_list[i] +")"
+                else:
+                    result += sentence[i]
+            print(result)
+            # result = machine_trans.translate_en_to_cn(text)
+            # print("translation: ", result)
+    elif args.test == False:
         """
         训练模型
         """
@@ -201,7 +248,6 @@ if __name__ == '__main__':
             #如果是bilstm-crf 还要加入<START>和<END> (解码的时候需要用到)
             data_set.extend_maps()
             bilstm_model = BILSTM_Model(args,data_set)
-            print("评估bilstm-crf模型中...")
             bilstm_model.model.load_state_dict(torch.load(args.test_model_path, map_location=args.device))
             pred_tag_lists, test_tag_lists = bilstm_model.test(data_set.x_test,data_set.y_test)
             confusion_matrix = ConfusionMatrix(test_tag_lists, pred_tag_lists,data_set.tag_list)
@@ -213,9 +259,18 @@ if __name__ == '__main__':
             #如果是bilstm-crf 还要加入<START>和<END> (解码的时候需要用到)
             data_set.extend_maps()
             transformer_model = TransformerCRF_Model(args,data_set)
-            print("评估bilstm-crf模型中...")
+            print("transformer-crf模型中...")
             transformer_model.model.load_state_dict(torch.load(args.test_model_path, map_location=args.device))
             pred_tag_lists, test_tag_lists = transformer_model.test(data_set.x_valid,data_set.y_valid)
+            confusion_matrix = ConfusionMatrix(test_tag_lists, pred_tag_lists,data_set.tag_list)
+            "打印评估结果"
+            confusion_matrix.print_scores()
+        elif args.algorithm == "bert-crf":
+            data_set.extend_maps()
+            bert_model = BertCRFModel(args,data_set)
+            print("bert-crf模型中...")
+            bert_model.model.load_state_dict(torch.load(args.test_model_path, map_location=args.device))
+            pred_tag_lists, test_tag_lists = bert_model.test(data_set.x_valid,data_set.y_valid)
             confusion_matrix = ConfusionMatrix(test_tag_lists, pred_tag_lists,data_set.tag_list)
             "打印评估结果"
             confusion_matrix.print_scores()

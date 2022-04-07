@@ -59,12 +59,24 @@ class HMM(object):
         self.Pi = self.Pi / self.Pi.sum()
 
     def test(self, word_lists):
+        """
+        测试集测试HMM模型
+        :param word_lists:
+        :return:
+        """
         pred_tag_lists = []
         for word_list in word_lists:
             pred_tag_list = self.decoding(word_list, self.word_to_index, self.tag_to_index)
             pred_tag_lists.append(pred_tag_list)
         return pred_tag_lists
-
+    def sentence_ner(self,sentence):
+        """
+        输入句子进行命名实体识别
+        :param sentence:
+        :return:
+        """
+        tag_list = self.decoding(sentence, self.word_to_index, self.tag_to_index)
+        return tag_list
     def decoding(self, word_list, word_to_index, tag_to_index):
         """
         使用维特比算法对给定观测序列求状态序列， 这里就是对字组成的序列,求其对应的标注。

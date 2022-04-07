@@ -9,7 +9,7 @@ class BILSTM_Model(object):
             vocab_size:词典大小
             out_size:标注种类
         """
-        if args.test == False:
+        if args.test == False and args.sentence_ner == False:
             self.writer = args.writer
         else:
             self.writer = None
@@ -171,6 +171,29 @@ class BILSTM_Model(object):
                 self.best_val_loss = val_loss
 
             return val_loss
+    def sentence_ner(self,sentence):
+        """
+        输入句子进行命名实体识别
+        :param sentence:
+        :return:
+        """
+        sentence_list = [i for i in sentence]
+        sentence_list.append("<SEP>")
+        token_sentences, lengths = self.data_set.bilstm_crf_word_to_index([sentence_list],
+                                                                               self.data_set.word_to_index)
+        token_sentences = token_sentences.to(self.device)
+        self.model.eval()
+        with torch.no_grad():
+            crf_scores, tag_index = self.model.test(
+                token_sentences, lengths,self.data_set.tag_to_index)
+        pred_tag_lists = []
+        for i, ids in enumerate(tag_index):
+            tag_list = []
+            for j in range(lengths[i] - 1):  # crf解码过程中，end被舍弃
+                tag_list.append(self.data_set.index_to_tag[ids[j].item()])
+            pred_tag_lists.append(tag_list)
+        return pred_tag_lists
+
     def test(self,word_list,label_list):
         """
         测试模型
@@ -178,21 +201,20 @@ class BILSTM_Model(object):
         """
         # 准备数据
         temp_test_word_lists, temp_test_tag_lists = self.data_set.prepocess_data_for_lstm_crf(
-            word_list, label_list, test=True
-        )
+            word_list, label_list, test=True)
         test_word_lists, test_tag_lists, indices = sort_by_lengths(temp_test_word_lists, temp_test_tag_lists)
         test_token_sentences, lengths = self.data_set.bilstm_crf_word_to_index(test_word_lists, self.data_set.word_to_index)
         test_token_sentences = test_token_sentences.to(self.device)
 
         self.model.eval()
         with torch.no_grad():
-            crf_scores, batch_tagids = self.model.test(
+            crf_scores, batch_tag_indexs = self.model.test(
                 test_token_sentences, lengths,self.data_set.tag_to_index)
 
         # 将id转化为标注
         pred_tag_lists = []
         # id2tag = dict((id_, tag) for tag, id_ in self.data_set.tag_to_index.items())
-        for i, ids in enumerate(batch_tagids):
+        for i, ids in enumerate(batch_tag_indexs):
             tag_list = []
             for j in range(lengths[i] - 1):  # crf解码过程中，end被舍弃
                 tag_list.append(self.data_set.index_to_tag[ids[j].item()])

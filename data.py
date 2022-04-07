@@ -216,5 +216,28 @@ class DataSet():
         # words_list各个元素的长度
         lengths = [len(line) for line in list]
         return batch_tensor, lengths,mask,token_type_ids
+
+    def word_to_token(self,sentence,deep_model = False):
+        """
+        将句子转化为token，用于单个句子生成命名实体识别的结果。
+        :param sentence:
+        :param deep_model:  用的是否是深度学习的模型
+        :return:
+        """
+        index_list = []
+        START = self.word_to_index.get('<CLS>')
+        END = self.word_to_index.get('<SEP>')
+        PAD = self.word_to_index.get('<PAD>')
+        UNK = self.word_to_index.get('<UNK>')
+        if deep_model:
+            #如果不是HMM和CRF 则需要添加start和end标记
+            index_list.append(START)
+        for word in sentence:
+            index_list.append(self.word_to_index.get(word, UNK))
+        if deep_model:
+            #如果不是HMM和CRF 则需要添加start和end标记
+            index_list.append(END)
+        return index_list
+
 # data_set = DataSet()
 # data_set.load_data()
