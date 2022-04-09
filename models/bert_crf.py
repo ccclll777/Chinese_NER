@@ -1,6 +1,5 @@
 import torch
 from networks.bert_crf_network import BertCRF
-from tqdm import tqdm
 from utils import sort_by_lengths,build_optimizer_and_scheduler
 class BertCRFModel(object):
     def __init__(self, args,data_set):
@@ -65,7 +64,7 @@ class BertCRFModel(object):
             self.step = 0
             losses = 0
             #按照batch进行训练
-            for index in tqdm(range(0, len(train_word_lists), self.batch_size)):
+            for index in range(0, len(train_word_lists), self.batch_size):
                 #切分出一个batch的数据
                 batch_sents = train_word_lists[index:index+self.batch_size]
                 batch_tags = train_tag_lists[index:index+self.batch_size]

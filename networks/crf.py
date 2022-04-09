@@ -22,7 +22,7 @@ class CRF(nn.Module):
     def forward(self, emission):
         """
         求出了每一帧对应到每种tag的发射矩阵 也就是每个字对应发射到每一种tag的概率 但是相加和不为1
-        LSTM的输出——sentence的每个word经BiLSTM后，对应于每个label的得分
+        LSTM的输出——sentence的每个word经BiLSTM后，对应于每个tag的得分
         :param batch_sentences:
         :param sentence_lengths:
         :return:

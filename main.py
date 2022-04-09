@@ -80,7 +80,7 @@ def get_args():
     测试模型
     """
     parser.add_argument('--test-model-path', type=str, default="/checkpoints/clue/bert-crf/epoch_475.pth")
-    parser.add_argument('--test', action="store_false")
+    parser.add_argument('--test', action="store_true")
     #对单个句子进行命名实体识别任务
     parser.add_argument('--sentence-ner',action="store_true")
     args = parser.parse_known_args()[0]
@@ -129,16 +129,15 @@ if __name__ == '__main__':
             # sentence = "近年来，丹棱县等地一些不知名的石窟迎来了海内外的游客"
             if sentence == "break": break
             tag_list = model.sentence_ner(sentence)
-            result = ""
+            result = "\033[34m"
             tag_list = tag_list[0]
             for i in range(len(sentence)):
+
                 if tag_list[i] !="o":
-                    result += "("+sentence[i] +tag_list[i] +")"
+                    result += sentence[i] +"("+tag_list[i] +")"
                 else:
                     result += sentence[i]
-            print(result)
-            # result = machine_trans.translate_en_to_cn(text)
-            # print("translation: ", result)
+            print(result+"\033[0m")
     elif args.test == False:
         """
         训练模型
@@ -221,10 +220,10 @@ if __name__ == '__main__':
             transformer_model.train()
 
     else:
-        args.test_model_path = base_dir + args.test_model_path
         """
         测试模型
         """
+        args.test_model_path = base_dir + args.test_model_path
         if args.algorithm == "hmm":
             hmm_model = load_model(args.test_model_path)
             x_test = data_set.x_test
@@ -259,7 +258,7 @@ if __name__ == '__main__':
             #如果是bilstm-crf 还要加入<START>和<END> (解码的时候需要用到)
             data_set.extend_maps()
             transformer_model = TransformerCRF_Model(args,data_set)
-            print("transformer-crf模型中...")
+            print("评估transformer-crf模型中...")
             transformer_model.model.load_state_dict(torch.load(args.test_model_path, map_location=args.device))
             pred_tag_lists, test_tag_lists = transformer_model.test(data_set.x_valid,data_set.y_valid)
             confusion_matrix = ConfusionMatrix(test_tag_lists, pred_tag_lists,data_set.tag_list)
@@ -268,7 +267,7 @@ if __name__ == '__main__':
         elif args.algorithm == "bert-crf":
             data_set.extend_maps()
             bert_model = BertCRFModel(args,data_set)
-            print("bert-crf模型中...")
+            print("评估bert-crf模型中...")
             bert_model.model.load_state_dict(torch.load(args.test_model_path, map_location=args.device))
             pred_tag_lists, test_tag_lists = bert_model.test(data_set.x_valid,data_set.y_valid)
             confusion_matrix = ConfusionMatrix(test_tag_lists, pred_tag_lists,data_set.tag_list)

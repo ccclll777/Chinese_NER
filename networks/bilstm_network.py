@@ -81,12 +81,6 @@ class BiLSTM(nn.Module):
         output, _ = pad_packed_sequence(output, batch_first=True) #pack_padded_sequence 函数的逆向操作。就是把压紧的序列再填充回来
         if self.use_norm:
             output = self.layer_norm(output)
-        scores = self.linear(output)  #用线性层映射到输出 # [batch_size, length, out_size]
-        return scores
+        emission = self.linear(output)  #用线性层映射到输出 # [batch_size, length, out_size]
+        return emission
 
-    # def test(self, sents_tensor, lengths, _):
-    #     """第三个参数不会用到，加它是为了与BiLSTM_CRF保持同样的接口"""
-    #     logits = self.forward(sents_tensor, lengths) # [batch_size, length, out_size]
-    #     _, batch_tag_index = torch.max(logits, dim=2) #找到得分最大的index
-    #
-    #     return batch_tag_index
