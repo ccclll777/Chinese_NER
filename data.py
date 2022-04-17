@@ -3,9 +3,8 @@ from collections import Counter
 from collections.abc import Iterable
 import torch
 import  numpy as np
-base_dir = os.getcwd()
 class DataSet():
-    def __init__(self,data_set="clue"):
+    def __init__(self,data_set="clue",base_dir = os.getcwd()):
         """
 
         :param data_set:  读取那个数据集  clue or msra

@@ -16,9 +16,9 @@ base_dir = os.getcwd()
 def get_args():
     parser = argparse.ArgumentParser()
     #[hmm,crf,bilstm-crf,transformer-crf,bert-crf】
-    parser.add_argument('--algorithm', type=str, default="bert-crf",choices=["hmm","crf","bilstm-crf","transformer-crf","bert-crf"])  # 用于选择哪种算法
+    parser.add_argument('--algorithm', type=str, default="bilstm-crf",choices=["hmm","crf","bilstm-crf","transformer-crf","bert-crf"])  # 用于选择哪种算法
     #['msra','clue'】
-    parser.add_argument('--data-set', type=str, default="clue")  # 用于选择那个数据集
+    parser.add_argument('--data-set', type=str, default="msra")  # 用于选择那个数据集
     parser.add_argument('--min-freq', type=int, default=10)  # 去掉频率小于min-freq的字
     parser.add_argument('--seed', type=int, default=10)  # 随机数种子
     """
@@ -30,7 +30,7 @@ def get_args():
 
     parser.add_argument('--bert-model-dir', type=str, default="/bert/bert-base-chinese")
     parser.add_argument('--embedding-size', type=int, default=128) #bert bilstm用768
-    parser.add_argument('--hidden-size', type=int, default=200)  #bert bilstm用384
+    parser.add_argument('--hidden-size', type=int, default=256)  #bert bilstm用384
     parser.add_argument('--num-layers', type=int, default=2)  #lstm层数
     """
     差分学习率和warmup配置
@@ -65,9 +65,6 @@ def get_args():
     parser.add_argument('--num-blocks', type=int, default=2,help="transformer block的数量")#
     parser.add_argument('--num-heads', type=int, default=4,help="attention的head数")
     parser.add_argument('--feedforward-dim', type=int, default=512,help="feedforward的隐藏层dim")
-
-
-
     parser.add_argument('--log-step', type=int, default=5)
     parser.add_argument(
         '--device', type=str,
@@ -79,18 +76,37 @@ def get_args():
     """
     测试模型
     """
-    parser.add_argument('--test-model-path', type=str, default="/checkpoints/clue/bert-crf/epoch_475.pth")
+    parser.add_argument('--test-model-path', type=str, default="/checkpoints/msra/bert-crf/epoch_243.pth")
     parser.add_argument('--test', action="store_true")
     #对单个句子进行命名实体识别任务
     parser.add_argument('--sentence-ner',action="store_true")
     args = parser.parse_known_args()[0]
     return args
+def get_ner_result(sentence,tag_list):
+    word_dict = {}
+    word = ""
+    tags  = ""
+    lens = 0
+    for i in range(len(sentence)):
+        if tag_list[i] != "o":
+            word +=sentence[i]
+            tags =tag_list[i][2:]
+            lens +=1
+        else:
+            if lens != 0 :
+                word_dict[word] = tags
+                lens = 0
+                word = ""
+                tags = ""
+    if word != "":
+        word_dict[word] = tags
 
+    return word_dict
 if __name__ == '__main__':
     args = get_args()
     print(args)
     data_set = DataSet(args.data_set)
-    data_set.word_to_id(args.min_freq )
+    data_set.word_to_id(args.min_freq)
     args.bert_model_dir = base_dir+args.bert_model_dir
     args.model_path = args.model_path+args.data_set +"/"
     args.logs = args.logs+args.data_set +"/"
@@ -132,12 +148,20 @@ if __name__ == '__main__':
             result = "\033[34m"
             tag_list = tag_list[0]
             for i in range(len(sentence)):
-
                 if tag_list[i] !="o":
                     result += sentence[i] +"("+tag_list[i] +")"
                 else:
                     result += sentence[i]
             print(result+"\033[0m")
+            word_dict = get_ner_result(sentence,tag_list)
+            for k,v in word_dict.items():
+                if v == "nr":
+                    v = "人名"
+                if v == "nt":
+                    v = "组织机构"
+                if v == "ns":
+                    v = "地名"
+                print("\033[34m","word：",k,"--->","tag：",v,"\033[0m")
     elif args.test == False:
         """
         训练模型

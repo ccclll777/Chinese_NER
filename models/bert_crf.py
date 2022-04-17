@@ -199,15 +199,32 @@ class BertCRFModel(object):
         test_token_type_ids = test_token_type_ids.to(self.device)
 
         self.model.eval()
-        with torch.no_grad():
-            crf_scores, batch_tagids = self.model.test(test_token_sentences,sentences_mask,test_token_type_ids, lengths,self.data_set.tag_to_index)
-        # 将id转化为标注
         pred_tag_lists = []
-        for i, ids in enumerate(batch_tagids):
-            tag_list = []
-            for j in range(lengths[i] - 1):  # crf解码过程中，end被舍弃
-                tag_list.append(self.data_set.index_to_tag[ids[j].item()])
-            pred_tag_lists.append(tag_list)
+        with torch.no_grad():
+            for index in range(0, len(test_token_sentences), self.batch_size):
+                # 准备batch数据
+                batch_test_token_sentences = test_token_sentences[index:index+self.batch_size]
+                batch_lengths = lengths[index:index+self.batch_size]
+                batch_sentences_mask =sentences_mask[index:index+self.batch_size]
+                batch_test_token_type_ids =  test_token_type_ids[index:index+self.batch_size]
+                crf_scores, batch_tagids = self.model.test(batch_test_token_sentences, batch_sentences_mask, batch_test_token_type_ids,
+                                                           batch_lengths, self.data_set.tag_to_index)
+                # 将id转化为标注
+                # id2tag = dict((id_, tag) for tag, id_ in self.data_set.tag_to_index.items())
+                for i, ids in enumerate(batch_tagids):
+                    tag_list = []
+                    for j in range(batch_lengths[i] - 1):  # crf解码过程中，end被舍弃
+                        tag_list.append(self.data_set.index_to_tag[ids[j].item()])
+                    pred_tag_lists.append(tag_list)
+        # with torch.no_grad():
+        #     crf_scores, batch_tagids = self.model.test(test_token_sentences,sentences_mask,test_token_type_ids, lengths,self.data_set.tag_to_index)
+        # # 将id转化为标注
+        # pred_tag_lists = []
+        # for i, ids in enumerate(batch_tagids):
+        #     tag_list = []
+        #     for j in range(lengths[i] - 1):  # crf解码过程中，end被舍弃
+        #         tag_list.append(self.data_set.index_to_tag[ids[j].item()])
+        #     pred_tag_lists.append(tag_list)
 
         # indices存有根据长度排序后的索引映射的信息
         # 比如若indices = [1, 2, 0] 则说明原先索引为1的元素映射到的新的索引是0，
